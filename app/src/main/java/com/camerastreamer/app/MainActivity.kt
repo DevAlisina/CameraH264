@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCopyCloudflareUrl: MaterialButton
     private lateinit var btnShareCloudflareUrl: MaterialButton
     private lateinit var tvCloudflareInstructions: TextView
+    private lateinit var btnViewLogs: ImageButton
 
     private lateinit var cameraManager: CameraCaptureManager
     private var encoder: H264Encoder? = null
@@ -174,6 +175,7 @@ class MainActivity : AppCompatActivity() {
         btnCopyCloudflareUrl = findViewById(R.id.btnCopyCloudflareUrl)
         btnShareCloudflareUrl = findViewById(R.id.btnShareCloudflareUrl)
         tvCloudflareInstructions = findViewById(R.id.tvCloudflareInstructions)
+        btnViewLogs = findViewById(R.id.btnViewLogs)
     }
 
     private fun setupSpinners() {
@@ -246,6 +248,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 startActivity(Intent.createChooser(sendIntent, "Share Stream URL"))
             }
+        }
+
+        btnViewLogs.setOnClickListener {
+            startActivity(Intent(this, CloudflareLogsActivity::class.java))
         }
     }
 

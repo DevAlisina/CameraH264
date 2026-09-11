@@ -39,6 +39,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".CloudflareLogsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:label="Cloudflared Logs" />
     </application>
 
 </manifest>

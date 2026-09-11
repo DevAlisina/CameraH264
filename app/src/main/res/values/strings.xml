@@ -13,4 +13,5 @@
     <string name="stop_cloudflare">Stop Cloudflare Tunnel</string>
     <string name="copy_url">Copy</string>
     <string name="share_url">Share</string>
+    <string name="view_logs">View cloudflared logs</string>
 </resources>

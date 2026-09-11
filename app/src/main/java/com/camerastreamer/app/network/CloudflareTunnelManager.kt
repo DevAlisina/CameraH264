@@ -13,6 +13,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 
@@ -26,6 +27,7 @@ class CloudflareTunnelManager(private val context: Context) {
     companion object {
         private const val TAG = "CloudflareTunnel"
         private val URL_PATTERN = Pattern.compile("https://[a-zA-Z0-9-]+\\.trycloudflare\\.com")
+        private const val MAX_LOG_LINES = 500
     }
 
     interface TunnelListener {
@@ -37,6 +39,16 @@ class CloudflareTunnelManager(private val context: Context) {
     }
 
     var listener: TunnelListener? = null
+
+    /** Thread-safe ring buffer holding the last [MAX_LOG_LINES] log lines (also feeds CloudflareLogStore). */
+    val logBuffer: ConcurrentLinkedDeque<String> = ConcurrentLinkedDeque()
+
+    private fun appendLog(line: String) {
+        logBuffer.addLast(line)
+        while (logBuffer.size > MAX_LOG_LINES) logBuffer.pollFirst()
+        // Push to the app-level store so CloudflareLogsActivity can observe it
+        com.camerastreamer.app.CloudflareLogStore.addLine(line)
+    }
 
     private var tunnelProcess: Process? = null
     private val isRunning = AtomicBoolean(false)
@@ -185,12 +197,14 @@ class CloudflareTunnelManager(private val context: Context) {
                 val proc = processBuilder.start()
                 tunnelProcess = proc
                 isRunning.set(true)
+                com.camerastreamer.app.CloudflareLogStore.isTunnelRunning = true
                 listener?.onTunnelStatusUpdate("Connecting to Cloudflare edge...")
 
                 proc.inputStream.bufferedReader().use { reader ->
                     while (isRunning.get()) {
                         val currentLine = reader.readLine() ?: break
                         Log.d(TAG, currentLine)
+                        appendLog(currentLine)
 
                         val matcher = URL_PATTERN.matcher(currentLine)
                         if (matcher.find()) {
@@ -239,6 +253,7 @@ class CloudflareTunnelManager(private val context: Context) {
         wakeLock = null
 
         publicUrl = null
+        com.camerastreamer.app.CloudflareLogStore.isTunnelRunning = false
         listener?.onTunnelStopped()
         Log.i(TAG, "Cloudflare Tunnel stopped")
     }
