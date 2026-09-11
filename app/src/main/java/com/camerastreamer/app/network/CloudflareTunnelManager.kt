@@ -188,9 +188,8 @@ class CloudflareTunnelManager(private val context: Context) {
                 listener?.onTunnelStatusUpdate("Connecting to Cloudflare edge...")
 
                 proc.inputStream.bufferedReader().use { reader ->
-                    var line: String?
-                    while (isRunning.get() && reader.readLine().also { line = it } != null) {
-                        val currentLine = line ?: continue
+                    while (isRunning.get()) {
+                        val currentLine = reader.readLine() ?: break
                         Log.d(TAG, currentLine)
 
                         val matcher = URL_PATTERN.matcher(currentLine)
