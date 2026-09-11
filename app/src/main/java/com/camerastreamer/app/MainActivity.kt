@@ -1,6 +1,9 @@
 package com.camerastreamer.app
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -27,6 +30,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.camerastreamer.app.camera.CameraCaptureManager
 import com.camerastreamer.app.encoder.H264Encoder
+import com.camerastreamer.app.network.CloudflareTunnelManager
 import com.camerastreamer.app.network.H264ClientSender
 import com.camerastreamer.app.network.H264Server
 import com.camerastreamer.app.network.NetworkUtils
@@ -57,10 +61,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spinnerBitrate: Spinner
     private lateinit var btnToggleStream: MaterialButton
 
+    // Cloudflare Tunnel UI Elements
+    private lateinit var btnCloudflareTunnel: MaterialButton
+    private lateinit var cardCloudflare: View
+    private lateinit var tvCloudflareStatus: TextView
+    private lateinit var tvCloudflareUrl: TextView
+    private lateinit var btnCopyCloudflareUrl: MaterialButton
+    private lateinit var btnShareCloudflareUrl: MaterialButton
+    private lateinit var tvCloudflareInstructions: TextView
+
     private lateinit var cameraManager: CameraCaptureManager
     private var encoder: H264Encoder? = null
     private var server: H264Server? = null
     private var clientSender: H264ClientSender? = null
+    private var cloudflareManager: CloudflareTunnelManager? = null
 
     private var isStreaming = false
     private var localIp = "127.0.0.1"
@@ -151,6 +165,15 @@ class MainActivity : AppCompatActivity() {
         spinnerResolution = findViewById(R.id.spinnerResolution)
         spinnerBitrate = findViewById(R.id.spinnerBitrate)
         btnToggleStream = findViewById(R.id.btnToggleStream)
+
+        // Cloudflare Tunnel elements
+        btnCloudflareTunnel = findViewById(R.id.btnCloudflareTunnel)
+        cardCloudflare = findViewById(R.id.cardCloudflare)
+        tvCloudflareStatus = findViewById(R.id.tvCloudflareStatus)
+        tvCloudflareUrl = findViewById(R.id.tvCloudflareUrl)
+        btnCopyCloudflareUrl = findViewById(R.id.btnCopyCloudflareUrl)
+        btnShareCloudflareUrl = findViewById(R.id.btnShareCloudflareUrl)
+        tvCloudflareInstructions = findViewById(R.id.tvCloudflareInstructions)
     }
 
     private fun setupSpinners() {
@@ -181,9 +204,12 @@ class MainActivity : AppCompatActivity() {
         rgMode.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == R.id.rbClientMode) {
                 etHost.visibility = View.VISIBLE
+                btnCloudflareTunnel.visibility = View.GONE
+                stopCloudflareTunnel()
                 updateInstructionsForClientMode()
             } else {
                 etHost.visibility = View.GONE
+                btnCloudflareTunnel.visibility = View.VISIBLE
                 updateInstructionsForServerMode()
             }
         }
@@ -193,6 +219,32 @@ class MainActivity : AppCompatActivity() {
                 stopStreaming()
             } else {
                 startStreaming()
+            }
+        }
+
+        btnCloudflareTunnel.setOnClickListener {
+            toggleCloudflareTunnel()
+        }
+
+        btnCopyCloudflareUrl.setOnClickListener {
+            val url = tvCloudflareUrl.text.toString()
+            if (url.startsWith("http")) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Cloudflare Tunnel URL", url)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(this, "URL copied to clipboard!", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnShareCloudflareUrl.setOnClickListener {
+            val url = tvCloudflareUrl.text.toString()
+            if (url.startsWith("http")) {
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, "Watch live camera stream: $url/live.h264")
+                    type = "text/plain"
+                }
+                startActivity(Intent.createChooser(sendIntent, "Share Stream URL"))
             }
         }
     }
@@ -429,8 +481,85 @@ class MainActivity : AppCompatActivity() {
         this.clientSender = client
     }
 
+    private fun toggleCloudflareTunnel() {
+        val manager = cloudflareManager
+        if (manager != null && manager.isTunnelActive()) {
+            stopCloudflareTunnel()
+        } else {
+            startCloudflareTunnel()
+        }
+    }
+
+    private fun startCloudflareTunnel() {
+        if (!isStreaming) {
+            startStreaming()
+            if (!isStreaming) return
+        }
+
+        val portStr = etPort.text.toString().trim().ifEmpty { "8080" }
+        val port = portStr.toIntOrNull() ?: 8080
+
+        cardCloudflare.visibility = View.VISIBLE
+        tvCloudflareStatus.text = "Cloudflare Tunnel: Connecting to edge..."
+        tvCloudflareUrl.text = "Obtaining public tunnel address..."
+        btnCloudflareTunnel.text = getString(R.string.stop_cloudflare)
+        btnCloudflareTunnel.setBackgroundColor(Color.parseColor("#E53935"))
+
+        val manager = CloudflareTunnelManager(this)
+        manager.listener = object : CloudflareTunnelManager.TunnelListener {
+            override fun onTunnelStarting() {
+                runOnUiThread {
+                    btnCloudflareTunnel.text = getString(R.string.stop_cloudflare)
+                    btnCloudflareTunnel.setBackgroundColor(Color.parseColor("#E53935"))
+                }
+            }
+
+            override fun onTunnelUrlAvailable(publicUrl: String) {
+                runOnUiThread {
+                    tvCloudflareStatus.text = "Cloudflare Tunnel: Active (Online)"
+                    tvCloudflareUrl.text = publicUrl
+                    tvCloudflareInstructions.text = "Internet Playback Command:\nffplay -fflags nobuffer -flags low_delay $publicUrl/live.h264\n\nVLC URL: $publicUrl/live.h264"
+                }
+            }
+
+            override fun onTunnelStatusUpdate(status: String) {
+                runOnUiThread {
+                    tvCloudflareStatus.text = "Cloudflare Tunnel: $status"
+                }
+            }
+
+            override fun onTunnelError(error: String) {
+                runOnUiThread {
+                    tvCloudflareStatus.text = "Cloudflare Error: $error"
+                    Toast.makeText(this@MainActivity, "Cloudflare Tunnel error: $error", Toast.LENGTH_LONG).show()
+                }
+            }
+
+            override fun onTunnelStopped() {
+                runOnUiThread {
+                    btnCloudflareTunnel.text = getString(R.string.enable_cloudflare)
+                    btnCloudflareTunnel.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.cloudflare_orange))
+                    cardCloudflare.visibility = View.GONE
+                }
+            }
+        }
+
+        manager.startTunnel(port)
+        this.cloudflareManager = manager
+    }
+
+    private fun stopCloudflareTunnel() {
+        cloudflareManager?.stopTunnel()
+        cloudflareManager = null
+        btnCloudflareTunnel.text = getString(R.string.enable_cloudflare)
+        btnCloudflareTunnel.setBackgroundColor(ContextCompat.getColor(this, R.color.cloudflare_orange))
+        cardCloudflare.visibility = View.GONE
+    }
+
     private fun stopStreaming() {
         isStreaming = false
+
+        stopCloudflareTunnel()
 
         server?.stop()
         server = null

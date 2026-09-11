@@ -294,6 +294,126 @@
                         app:cornerRadius="10dp"
                         app:icon="@drawable/ic_play"
                         app:iconGravity="textStart" />
+
+                    <!-- Cloudflare Tunnel Button (Server Mode Only) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCloudflareTunnel"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/enable_cloudflare"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        app:backgroundTint="@color/cloudflare_orange"
+                        app:cornerRadius="10dp"
+                        app:icon="@drawable/ic_cloudflare"
+                        app:iconGravity="textStart" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Cloudflare Tunnel Status & Public URL Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardCloudflare"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="#DD201A15"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="4dp"
+                app:strokeColor="@color/cloudflare_orange"
+                app:strokeWidth="1.5dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_cloudflare"
+                            android:contentDescription="Cloudflare" />
+
+                        <TextView
+                            android:id="@+id/tvCloudflareStatus"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:text="Cloudflare Tunnel: Connecting..."
+                            android:textColor="@color/cloudflare_orange"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvCloudflareUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="#33000000"
+                        android:padding="8dp"
+                        android:text="Obtaining public tunnel address..."
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:fontFamily="monospace"
+                        android:textIsSelectable="true" />
+
+                    <!-- Action Buttons: Copy and Share -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCopyCloudflareUrl"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:text="@string/copy_url"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            app:cornerRadius="6dp"
+                            app:icon="@drawable/ic_content_copy"
+                            app:iconSize="16dp"
+                            app:strokeColor="#55FFFFFF" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnShareCloudflareUrl"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:text="@string/share_url"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            app:cornerRadius="6dp"
+                            app:strokeColor="#55FFFFFF" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvCloudflareInstructions"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="#2A2A2A"
+                        android:padding="6dp"
+                        android:text="Internet Playback Command:\nffplay -fflags nobuffer -flags low_delay &lt;URL&gt;/live.h264"
+                        android:textColor="@color/text_primary"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

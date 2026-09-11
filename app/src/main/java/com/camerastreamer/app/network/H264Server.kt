@@ -90,7 +90,38 @@ class H264Server(
 
                 Log.i(TAG, "New client connected: ${clientSocket.remoteSocketAddress}")
 
+                val inStream = clientSocket.getInputStream()
                 val outputStream = clientSocket.getOutputStream()
+
+                // Check if client is an HTTP client (like Cloudflare Tunnel or web player)
+                var isHttp = false
+                try {
+                    clientSocket.soTimeout = 300
+                    val probeBuffer = ByteArray(2048)
+                    val bytesRead = inStream.read(probeBuffer)
+                    if (bytesRead > 0) {
+                        val req = String(probeBuffer, 0, bytesRead)
+                        if (req.startsWith("GET") || req.startsWith("HEAD")) {
+                            isHttp = true
+                        }
+                    }
+                } catch (_: java.net.SocketTimeoutException) {
+                    // Regular raw TCP client that only receives data
+                    isHttp = false
+                } finally {
+                    try { clientSocket.soTimeout = 0 } catch (_: Exception) {}
+                }
+
+                if (isHttp) {
+                    val httpResponse = "HTTP/1.1 200 OK\r\n" +
+                        "Content-Type: video/h264\r\n" +
+                        "Connection: close\r\n" +
+                        "Access-Control-Allow-Origin: *\r\n" +
+                        "Cache-Control: no-cache, no-store, must-revalidate\r\n" +
+                        "\r\n"
+                    outputStream.write(httpResponse.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+                }
 
                 // Immediately send cached SPS/PPS header so decoder can initialize
                 cachedSpsPps?.let { spsPps ->

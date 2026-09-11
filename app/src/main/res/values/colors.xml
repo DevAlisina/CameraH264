@@ -10,4 +10,6 @@
     <color name="status_streaming">#00E676</color>
     <color name="status_idle">#9E9E9E</color>
     <color name="status_error">#FF5252</color>
+    <color name="cloudflare_orange">#F38020</color>
+    <color name="cloudflare_orange_dark">#D96E14</color>
 </resources>

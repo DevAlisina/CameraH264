@@ -50,6 +50,12 @@ android {
     buildFeatures {
         viewBinding = false
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {

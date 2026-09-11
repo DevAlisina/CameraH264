@@ -37,6 +37,27 @@ jobs:
         run: |
           chmod +x gradlew || true
 
+      - name: Download cloudflared binaries for Android
+        run: |
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          mkdir -p app/src/main/jniLibs/armeabi-v7a
+          mkdir -p app/src/main/jniLibs/x86_64
+          
+          # ARM64 (Primary modern Android architecture)
+          curl -L -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libcloudflared.so
+
+          # ARM 32-bit
+          curl -L -o app/src/main/jniLibs/armeabi-v7a/libcloudflared.so \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm
+          chmod 755 app/src/main/jniLibs/armeabi-v7a/libcloudflared.so
+
+          # x86_64 (Emulators)
+          curl -L -o app/src/main/jniLibs/x86_64/libcloudflared.so \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod 755 app/src/main/jniLibs/x86_64/libcloudflared.so
+
       - name: Build Debug APK
         run: |
           gradle assembleDebug --stacktrace

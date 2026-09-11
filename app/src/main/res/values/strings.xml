@@ -9,4 +9,8 @@
     <string name="permission_camera_rationale">Camera permission is required to capture and stream H.264 video to network clients.</string>
     <string name="grant_permission">Grant Camera Permission</string>
     <string name="settings">Open Settings</string>
+    <string name="enable_cloudflare">Start Cloudflare Tunnel</string>
+    <string name="stop_cloudflare">Stop Cloudflare Tunnel</string>
+    <string name="copy_url">Copy</string>
+    <string name="share_url">Share</string>
 </resources>
