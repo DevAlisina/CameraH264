@@ -1,0 +1,98 @@
+name: Build and Release Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.5
+
+      - name: Ensure gradlew is executable
+        run: |
+          chmod +x gradlew || true
+
+      - name: Build Debug APK
+        run: |
+          gradle assembleDebug --stacktrace
+
+      - name: Build Release APK
+        run: |
+          gradle assembleRelease --stacktrace
+
+      - name: Prepare APK Artifacts
+        run: |
+          mkdir -p build_output
+          cp app/build/outputs/apk/debug/app-debug.apk build_output/CameraH264Streamer-debug.apk
+          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk build_output/CameraH264Streamer-release-unsigned.apk
+          fi
+
+      - name: Upload APKs to Workflow Run Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CameraH264Streamer-APKs
+          path: build_output/*
+          retention-days: 30
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Release {0}', github.ref_name) || 'Latest Build (main)' }}
+          draft: false
+          prerelease: false
+          files: |
+            build_output/CameraH264Streamer-debug.apk
+            build_output/CameraH264Streamer-release-unsigned.apk
+          body: |
+            ### H.264 Camera Streamer for Android 14
+
+            #### 📦 Download and Installation:
+            - **[CameraH264Streamer-debug.apk](CameraH264Streamer-debug.apk)** (**Recommended**): Signed with Android debug key, ready to install directly on your Android 14 device without needing custom keystores.
+            - **CameraH264Streamer-release-unsigned.apk**: Unsigned release build.
+
+            #### 🚀 How to Stream:
+            1. Install the APK on your Android 14 phone.
+            2. Grant Camera permission when prompted.
+            3. Note the displayed **Device IP** (e.g., `192.168.1.50`).
+            4. Tap **Start Stream** (default port: `8080`).
+            5. On your computer (in the same Wi-Fi / LAN), play the low-latency H.264 stream using `ffplay`, `vlc`, or `ffmpeg`:
+
+            ```bash
+            # With ffplay (ultra low latency):
+            ffplay -fflags nobuffer -flags low_delay -framedrop -f h264 tcp://<PHONE_IP>:8080
+
+            # With VLC:
+            vlc tcp/h264://<PHONE_IP>:8080
+
+            # Over USB ADB port forwarding:
+            adb forward tcp:8080 tcp:8080
+            ffplay -fflags nobuffer -flags low_delay -f h264 tcp://127.0.0.1:8080
+            ```
