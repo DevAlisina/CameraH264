@@ -98,7 +98,7 @@ class H264Encoder(
         try {
             mediaCodec?.let { codec ->
                 val params = Bundle().apply {
-                    putInt(MediaCodec.PARAMETER_KEY_FRAME_REQUEST, 0)
+                    putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
                 }
                 codec.setParameters(params)
                 Log.d(TAG, "Forced key frame requested")
