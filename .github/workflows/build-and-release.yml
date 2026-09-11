@@ -49,15 +49,17 @@ jobs:
         run: |
           mkdir -p build_output
           cp app/build/outputs/apk/debug/app-debug.apk build_output/CameraH264Streamer-debug.apk
-          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk build_output/CameraH264Streamer-release-unsigned.apk
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk build_output/CameraH264Streamer-release.apk
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk build_output/CameraH264Streamer-release.apk
           fi
 
       - name: Upload APKs to Workflow Run Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: CameraH264Streamer-APKs
-          path: build_output/*
+          path: build_output/*.apk
           retention-days: 30
 
       - name: Publish to GitHub Releases
@@ -68,15 +70,13 @@ jobs:
           name: ${{ startsWith(github.ref, 'refs/tags/') && format('Release {0}', github.ref_name) || 'Latest Build (main)' }}
           draft: false
           prerelease: false
-          files: |
-            build_output/CameraH264Streamer-debug.apk
-            build_output/CameraH264Streamer-release-unsigned.apk
+          files: build_output/*.apk
           body: |
             ### H.264 Camera Streamer for Android 14
 
-            #### 📦 Download and Installation:
-            - **[CameraH264Streamer-debug.apk](CameraH264Streamer-debug.apk)** (**Recommended**): Signed with Android debug key, ready to install directly on your Android 14 device without needing custom keystores.
-            - **CameraH264Streamer-release-unsigned.apk**: Unsigned release build.
+            #### 📦 Downloads (Both are pre-signed and ready to install!):
+            - **[CameraH264Streamer-release.apk](CameraH264Streamer-release.apk)**: Optimized release build.
+            - **[CameraH264Streamer-debug.apk](CameraH264Streamer-debug.apk)**: Debug build.
 
             #### 🚀 How to Stream:
             1. Install the APK on your Android 14 phone.
