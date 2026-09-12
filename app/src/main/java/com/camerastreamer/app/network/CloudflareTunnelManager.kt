@@ -267,6 +267,8 @@ class CloudflareTunnelManager(private val context: Context) {
                 Log.i(TAG, "Credentials written to ${credsFile.absolutePath}")
 
                 // Phase 3: Write config file
+                // Single catch-all rule routes ALL traffic to our local service.
+                // No hostname matching needed — Quick Tunnel has one dynamic hostname.
                 val configFile = File(context.cacheDir, "tunnel_config.yml")
                 configFile.writeText("""
                     |tunnel: $tunnelId
@@ -274,9 +276,6 @@ class CloudflareTunnelManager(private val context: Context) {
                     |protocol: http2
                     |ingress:
                     |  - service: http://localhost:$localPort
-                    |    originRequest:
-                    |      noTLSVerify: true
-                    |  - service: http_status:404
                 """.trimMargin())
                 Log.i(TAG, "Config written to ${configFile.absolutePath}")
 
