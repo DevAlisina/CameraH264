@@ -181,6 +181,20 @@
                         android:textColor="@color/text_primary"
                         android:textSize="11sp"
                         android:fontFamily="monospace" />
+
+                    <!-- Cloudflare Logs Button (always visible) -->
+                    <ImageButton
+                        android:id="@+id/btnViewLogs"
+                        android:layout_width="match_parent"
+                        android:layout_height="36dp"
+                        android:layout_marginTop="6dp"
+                        android:background="#2A2A2A"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:src="@drawable/ic_logs"
+                        android:contentDescription="View cloudflared logs"
+                        android:scaleType="centerInside"
+                        app:tint="@color/text_primary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -353,15 +367,6 @@
                             android:textColor="@color/cloudflare_orange"
                             android:textSize="14sp"
                             android:textStyle="bold" />
-
-                        <ImageButton
-                            android:id="@+id/btnViewLogs"
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
-                            android:background="?attr/selectableItemBackgroundBorderless"
-                            android:src="@drawable/ic_logs"
-                            android:contentDescription="View cloudflared logs"
-                            app:tint="@color/text_primary" />
                     </LinearLayout>
 
                     <TextView
