@@ -9,25 +9,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.URL
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.regex.Pattern
 
 /**
  * Manages Cloudflare Quick Tunnel (cloudflared) on Android.
- * Runs non-root using either the pre-bundled native library (libcloudflared.so)
- * or dynamically downloaded binary.
+ *
+ * Runs non-root using the pre-bundled native library (libcloudflared.so).
+ *
+ * DNS on Android is broken for Go binaries — Go reads /etc/resolv.conf which
+ * doesn't exist on Android, so it falls back to [::1]:53 and fails.
+ * The fix: do ALL DNS work from Java (which uses Android's native resolver),
+ * then pass pre-resolved IPs to cloudflared via --edge flags.
  */
 class CloudflareTunnelManager(private val context: Context) {
 
     companion object {
         private const val TAG = "CloudflareTunnel"
-        private val URL_PATTERN = Pattern.compile("https://[a-zA-Z0-9-]+\\.trycloudflare\\.com")
         private const val MAX_LOG_LINES = 500
+        private const val API_URL = "https://api.trycloudflare.com/tunnel"
+        private const val EDGE_PORT = 7844
+        private val EDGE_HOSTS = listOf(
+            "region1.v2.argotunnel.com",
+            "region2.v2.argotunnel.com"
+        )
     }
 
     interface TunnelListener {
@@ -40,13 +52,12 @@ class CloudflareTunnelManager(private val context: Context) {
 
     var listener: TunnelListener? = null
 
-    /** Thread-safe ring buffer holding the last [MAX_LOG_LINES] log lines (also feeds CloudflareLogStore). */
+    /** Thread-safe ring buffer holding the last [MAX_LOG_LINES] log lines. */
     val logBuffer: ConcurrentLinkedDeque<String> = ConcurrentLinkedDeque()
 
     private fun appendLog(line: String) {
         logBuffer.addLast(line)
         while (logBuffer.size > MAX_LOG_LINES) logBuffer.pollFirst()
-        // Push to the app-level store so CloudflareLogsActivity can observe it
         com.camerastreamer.app.CloudflareLogStore.addLine(line)
     }
 
@@ -62,14 +73,12 @@ class CloudflareTunnelManager(private val context: Context) {
      * Resolves the executable path of cloudflared.
      */
     fun getBinaryFile(): File? {
-        // 1. Native library directory (preferred and fastest)
         val nativeDir = context.applicationInfo.nativeLibraryDir
         val nativeLib = File(nativeDir, "libcloudflared.so")
         if (nativeLib.exists() && nativeLib.canExecute()) {
             return nativeLib
         }
 
-        // 2. Downloaded / cached binary in files directory
         val downloadedBin = File(context.filesDir, "cloudflared")
         if (downloadedBin.exists() && downloadedBin.canExecute()) {
             return downloadedBin
@@ -78,9 +87,6 @@ class CloudflareTunnelManager(private val context: Context) {
         return null
     }
 
-    /**
-     * Checks if the binary is ready to run or needs to be downloaded.
-     */
     fun isBinaryAvailable(): Boolean {
         return getBinaryFile() != null
     }
@@ -143,8 +149,84 @@ class CloudflareTunnelManager(private val context: Context) {
         }
     }
 
+    // ── Java-side DNS helpers ────────────────────────────────────────────
+
+    /**
+     * Registers a Quick Tunnel via Java HTTP (bypasses Go DNS entirely).
+     * Returns Triple(tunnelId, hostname, credentialsJson).
+     */
+    private fun registerTunnel(): Triple<String, String, String> {
+        val connection = URL(API_URL).openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.doOutput = true
+
+        // Empty POST body — trycloudflare.com Quick Tunnel API needs no payload
+        connection.outputStream.use { it.write(ByteArray(0)) }
+
+        val responseCode = connection.responseCode
+        val body = connection.inputStream.bufferedReader().readText()
+
+        if (responseCode !in 200..299) {
+            throw Exception("Quick Tunnel API returned HTTP $responseCode: $body")
+        }
+
+        val json = JSONObject(body)
+        val result = json.getJSONObject("result")
+
+        val tunnelId = result.getString("id")
+        val hostname = result.getString("hostname")
+        val accountTag = result.getString("account_tag")
+        val secret = result.getString("secret")
+
+        val credsJson = JSONObject().apply {
+            put("AccountTag", accountTag)
+            put("TunnelID", tunnelId)
+            put("TunnelSecret", secret)
+        }.toString(2)
+
+        Log.i(TAG, "Tunnel registered: id=$tunnelId hostname=$hostname")
+        return Triple(tunnelId, hostname, credsJson)
+    }
+
+    /**
+     * Resolves Cloudflare edge server IPs using Java's DNS resolver.
+     * Returns a list of "ip:port" strings.
+     */
+    private fun resolveEdgeIps(): List<String> {
+        val ips = mutableListOf<String>()
+        for (host in EDGE_HOSTS) {
+            try {
+                val allAddrs = InetAddress.getAllByName(host)
+                for (addr in allAddrs) {
+                    if (addr is Inet4Address) {
+                        ips.add("${addr.hostAddress}:$EDGE_PORT")
+                    }
+                }
+                Log.i(TAG, "Resolved $host -> ${ips.size} edge IPs")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to resolve $host: ${e.message}")
+            }
+        }
+        if (ips.isEmpty()) {
+            throw Exception("Could not resolve any Cloudflare edge IPs from $EDGE_HOSTS")
+        }
+        return ips
+    }
+
+    // ── Tunnel lifecycle ─────────────────────────────────────────────────
+
     /**
      * Starts the Cloudflare Quick Tunnel forwarding traffic to the local port.
+     *
+     * Flow:
+     *  1. Register tunnel from Java (GET tunnel ID + hostname + credentials)
+     *  2. Resolve edge IPs from Java (InetAddress — uses Android native DNS)
+     *  3. Write credentials JSON + config YAML to cacheDir
+     *  4. Launch cloudflared with --edge flags (ZERO DNS needed from Go)
+     *  5. Parse stdout for tunnel connection confirmation
      */
     fun startTunnel(localPort: Int) {
         if (isRunning.get()) return
@@ -169,52 +251,92 @@ class CloudflareTunnelManager(private val context: Context) {
                     return@launch
                 }
 
-                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CameraStreamer:CloudflareWakeLock").apply {
-                    acquire(10 * 60 * 1000L) // 10 minutes lock
+                // Phase 1: Register tunnel from Java (bypass Go DNS)
+                listener?.onTunnelStatusUpdate("Registering tunnel...")
+                val (tunnelId, hostname, credsJson) = withContext(Dispatchers.IO) {
+                    registerTunnel()
                 }
 
-                // Write custom DNS for Go's pure resolver
-                val dnsFile = File(context.filesDir, "resolv.conf")
-                dnsFile.writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
+                // The URL is known instantly from Phase 1 — no stdout parsing needed
+                publicUrl = "https://$hostname"
+                listener?.onTunnelUrlAvailable(publicUrl!!)
 
-                val command = arrayOf(
+                // Phase 2: Write credentials file
+                val credsFile = File(context.cacheDir, "tunnel_creds.json")
+                credsFile.writeText(credsJson)
+                Log.i(TAG, "Credentials written to ${credsFile.absolutePath}")
+
+                // Phase 3: Write config file
+                val configFile = File(context.cacheDir, "tunnel_config.yml")
+                configFile.writeText("""
+                    |tunnel: $tunnelId
+                    |credentials-file: ${credsFile.absolutePath}
+                    |protocol: http2
+                    |ingress:
+                    |  - service: http://localhost:$localPort
+                    |    originRequest:
+                    |      noTLSVerify: true
+                    |  - service: http_status:404
+                """.trimMargin())
+                Log.i(TAG, "Config written to ${configFile.absolutePath}")
+
+                // Phase 4: Resolve edge IPs from Java (bypass Go DNS)
+                listener?.onTunnelStatusUpdate("Resolving edge servers...")
+                val edgeIps = withContext(Dispatchers.IO) {
+                    resolveEdgeIps()
+                }
+                Log.i(TAG, "Edge IPs: $edgeIps")
+
+                // Phase 5: Acquire wake lock
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "CameraStreamer:CloudflareWakeLock"
+                ).apply {
+                    acquire(10 * 60 * 1000L)
+                }
+
+                // Phase 6: Build command — cloudflared does ZERO DNS
+                val command = mutableListOf(
                     binary.absolutePath,
                     "tunnel",
-                    "--no-autoupdate",
+                    "--config", configFile.absolutePath,
                     "--edge-ip-version", "4",
-                    "--protocol", "http2",
-                    "--url", "http://127.0.0.1:$localPort"
+                    "--no-autoupdate"
                 )
+                // One --edge flag per resolved IP (NOT comma-separated)
+                for (ip in edgeIps.take(4)) {
+                    command.addAll(listOf("--edge", ip))
+                }
+                command.addAll(listOf("run", tunnelId))
 
                 Log.i(TAG, "Executing: ${command.joinToString(" ")}")
-                val processBuilder = ProcessBuilder(*command)
-                val env = processBuilder.environment()
-                env["GODEBUG"] = "netdns=go"
-                processBuilder.redirectInput(dnsFile)
+                val processBuilder = ProcessBuilder(command)
                 processBuilder.redirectErrorStream(true)
 
+                // Phase 7: Launch cloudflared
                 val proc = processBuilder.start()
                 tunnelProcess = proc
                 isRunning.set(true)
                 com.camerastreamer.app.CloudflareLogStore.isTunnelRunning = true
                 listener?.onTunnelStatusUpdate("Connecting to Cloudflare edge...")
 
+                // Phase 8: Parse stdout for connection status
                 proc.inputStream.bufferedReader().use { reader ->
                     while (isRunning.get()) {
                         val currentLine = reader.readLine() ?: break
                         Log.d(TAG, currentLine)
                         appendLog(currentLine)
 
-                        val matcher = URL_PATTERN.matcher(currentLine)
-                        if (matcher.find()) {
-                            val url = matcher.group()
-                            publicUrl = url
-                            Log.i(TAG, "Discovered Cloudflare Tunnel URL: $url")
-                            listener?.onTunnelUrlAvailable(url)
-                            listener?.onTunnelStatusUpdate("Tunnel Active")
-                        } else if (currentLine.contains("Registered tunnel connection") || currentLine.contains("Connection registered")) {
-                            listener?.onTunnelStatusUpdate("Tunnel Active")
+                        when {
+                            currentLine.contains("Registered tunnel connection") ||
+                            currentLine.contains("Connection registered") -> {
+                                listener?.onTunnelStatusUpdate("Tunnel Active")
+                            }
+                            currentLine.contains("error") ||
+                            currentLine.contains("ERR") -> {
+                                listener?.onTunnelError(currentLine)
+                            }
                         }
                     }
                 }
@@ -232,9 +354,6 @@ class CloudflareTunnelManager(private val context: Context) {
         }
     }
 
-    /**
-     * Stops the running Cloudflare tunnel process.
-     */
     fun stopTunnel() {
         if (!isRunning.getAndSet(false)) return
 
